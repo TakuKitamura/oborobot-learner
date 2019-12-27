@@ -1,12 +1,29 @@
-import MeCab
+# import MeCab
 import numpy as np
 from gensim.models import KeyedVectors, Word2Vec
+import unicodedata
+from janome.tokenizer import Tokenizer
+import nltk
 
+jp_tokennizer = Tokenizer('../oborobot-analyzer/neologd')
+
+def is_japanese(string):
+    for ch in string:
+        name = unicodedata.name(ch)
+        if "CJK UNIFIED" in name \
+        or "HIRAGANA" in name \
+        or "KATAKANA" in name:
+            return True
+    return False
 
 def tokenize(text):
-    wakati = MeCab.Tagger("-O wakati")
-    wakati.parse("")
-    return wakati.parse(text).strip().split(" ")
+    if is_japanese(text):
+        return jp_tokennizer.tokenize(text, wakati=True)
+    else:
+        return nltk.word_tokenize(text)
+    # wakati = MeCab.Tagger("-O wakati")
+    # wakati.parse("")
+    # return wakati.parse(text).strip().split(" ")
 
 
 def sigmoid(x):
@@ -25,7 +42,6 @@ class WED():
         self.params = params
 
     def _word_similarity(self, w1, w2):
-        print(w1, w2)
         if w1 == w2:
             score = 1
         elif w1 in self.embedding.vocab and w2 in self.embedding.vocab:
@@ -67,13 +83,13 @@ class WED():
 
 
 if __name__ == "__main__":
-    w2v_path = "wiki-news-300d-1M.vec.bin"
+    w2v_path = "vecData/wiki-news-300d-1M.vec.bin"
     model = KeyedVectors.load_word2vec_format(w2v_path, binary=True)
     params = {"w": 2, "b": 0, "l": 0.5, "m": 0.5}
 
     wed = WED(embedding=model, tokenizer=tokenize, params=params)
     # print(wed.similar("How large is the largest city in Alaska?", "The biggest city in Alaska is how big?"))
-    print(wed.similar("I have a pen.", "We have an orange."))
+    print(wed.similar("今日は晴れです｡", "今日は晴れです｡"))
     # print(wed.similar("go api server", "api server go"))
     # print(wed.similar("api server", "api server go"))
     # print(wed.similar("api server", "api server go"))
