@@ -4,251 +4,267 @@ import math
 from pprint import pprint
 import time
 import pymongo
+import matplotlib.pyplot as plt
+import numpy as np
+import japanize_matplotlib
+from bottle import run, template, post, request, response
+import urllib.parse
+import time
 
 def randNum():
-	return random.uniform(0, 10)
-
-client = pymongo.MongoClient("localhost", 27017)
-db = client.oborobot
-
-articles = {}
-
-for obj in db.word.find({'$or': [{'section_name': "description"} , {"section_name": "title"}], "lang":"ja", '$or': [{"type": "ProperNoun"} , {"type": "Noun"}]}):
-	# print(obj)
-	articles[obj['href']] = {
-		'pos': [randNum(), randNum()],
-		'words': [],
-		'reward': 0.0,
-		'f': 0.0,
-		'url': obj['href']
-	}
-
-
-
-
-for obj in db.word.find({'$or': [{'section_name': "description"} , {"section_name": "title"}], "lang":"ja", '$or': [{"type": "ProperNoun"}, {"type": "Noun"}, {"type": "Adjective"}]}):
-	articles[obj['href']]['words'].append(obj['value'].lower())
-	articles[obj['href']]['words'] = list(set(articles[obj['href']]['words']))
-	articles[obj['href']]['reward'] = len(articles[obj['href']]['words'])
-
-# print(articles)
-# exit(0)
-
-
-
-
-# articles = {
-# 	'記事1': {
-# 		'pos': [randNum(), randNum()],
-# 		'words': ['python', 'file'],
-# 		'reward': 3,
-# 		'f': 0.0,
-# 		'url': 'a.com'
-
-# 	},
-# 	'記事2': {
-# 		'pos': [randNum(), randNum()],
-# 		'words': ['圧縮', 'エンコード'],
-# 		'reward': 1,
-# 		'f': 0.0,
-# 		'url': 'b.com'
-# 	},
-# 	'記事3': {
-# 		'pos': [randNum(), randNum()],
-# 		'words': ['API', 'go'],
-# 		'reward': 7,
-# 		'f': 0.0,
-# 		'url': 'c.com'
-# 	},
-# 	'記事4': {
-# 		'pos': [randNum(), randNum()],
-# 		'words': ['言語', '通信'],
-# 		'reward': 9,
-# 		'f': 0.0,
-# 		'url': 'd.com'
-# 	}
-# }
-
-request = {
-	'pos': [0.0, 0.0],
-	'reward': 1,
-}
-
-# わからないを追加
-# position を3店､ もしくは2点
-
-
-
-G = 6.67408 # * (10**-11)
+	return random.uniform(0, 1000)
 
 def get_distance(x, y):
     d = math.sqrt((y[0] - x[0]) ** 2 + (y[1] - x[1]) ** 2)
     return d
 
-while True:
+def en(url):
+	return urllib.parse.quote(url).replace(".", "%2E")
+
+def de(url):
+	return urllib.parse.unquote(url)
+
+def main_loop(db, articles, request):
+	# 以下ループ
 	maxF = 0
-	fMaxArticleName = ''
-	request['pos'][0] = randNum()
-	request['pos'][1] = randNum()
 
-	print('スタート')
-	blackLists = []
-	selectArticles = []
-	while True:
-		for articleName in articles:
-			article = articles[articleName]
-			# print(article)
-			# print(random.uniform(0, 100))
+	for articleName in articles:
+		article = articles[articleName]
+		r = get_distance(request['pos'], article['pos'])
+		if r == 0:
+			r += 1
+		m1 = article['reward']
+		# m2 = request['reward']
+		# f = G * ((m1 * m2)/(r**2))
+		f = m1 / (r**2)
+		if f > maxF:
+			maxF = f
+		article['f'] = f
+	sortedArticleNamesByReward =  sorted(articles, key=lambda x: (articles[x]['f']), reverse=True)
+	pprint(sortedArticleNamesByReward)
 
-			# x1, y1, x2, y2 = 1.0, 2.0, 2.0, 3.0
-			r = get_distance(request['pos'], article['pos'])
-			m1 = article['reward']
-			m2 = request['reward']
-			# f = G * ((m1 * m2)/(r**2))
-			f = m1 / r
-			if f > maxF:
-				maxF = f
-				fMaxArticleName = articleName
-			# print(article, request)
-			# print(f)
-			article['f'] = f
+	recommendations = []
+	for encoded_url in sortedArticleNamesByReward:
+		url = de(encoded_url)
+		print(url, 555)
+		for obj in db.favorite.find({"href": url}):
+			recommendations.append({'title': obj['title'], 'description': obj['description'], 'url': url})
 
-		maxArticle = articles[fMaxArticleName]
-		blackLists.append(fMaxArticleName)
-		# articles.pop(fMaxArticleName)
+	pprint(recommendations)
+	# exit(0)
 
-		# pprint(articles)
+	wordCount = 0
+	tempSelectWordMap = {}
 
-		selectWordsQuestion = ''
-		wordCount = 0
-		# selectWordMap = {}
-		tempSelectWordMap = {}
-		for articleName in articles:
-			if articleName not in blackLists:
-				# print("black:",blackLists)
-				article = articles[articleName]
-				for i in range(0, len(article['words'])):
-					word = article['words'][i]
-					# selectWordsQuestion += str(wordCount+1) + ':' + word + ', '
-					if word not in tempSelectWordMap.keys():
-						tempSelectWordMap[word] = [articleName]
-					else:
-						tempSelectWordMap[word].append(articleName)
-					# selectWordMap[wordCount+1] = articleName
-					wordCount += 1
+	for articleName in articles:
+		# plt.plot(article['pos'][0]d, article['pos'][1], marker='o', markersize=30)
+		# plt.annotate(article['wors'], xy=(article['pos'][0], article['pos'][1]))
+		article = articles[articleName]
+		for i in range(0, len(article['words'])):
+			word = article['words'][i]
+			if word not in tempSelectWordMap.keys():
+				tempSelectWordMap[word] = [articleName]
+			else:
+				tempSelectWordMap[word].append(articleName)
+			wordCount += 1
+	# plt.pause(.01)
+	selectWordMap = []
+	i = 0
+	for articleName in tempSelectWordMap:
+		selectWordMap.append({'id': i, 'articleName': articleName, 'urlList': tempSelectWordMap[articleName]})
+		i+=1
 
-		selectWordMap = []
-		i = 0
-		for articleName in tempSelectWordMap:
-			selectWordMap.append({'id': i, 'articleName': articleName, 'urlList': tempSelectWordMap[articleName]})
-			i+=1
-		# pprint(selectWordMap)
+	r = {'articles': articles, 'choice': selectWordMap, 'recommendation': recommendations, 'request': request}
+	return r
 
-		for wordDict in selectWordMap:
-			selectWordsQuestion += str(wordDict['id']+1) + ':' + wordDict['articleName'] + ', '
-		# exit(0)
-		# pprint(articles)
-		answer = input(fMaxArticleName + ' 役に立つ? ')
-		if answer == 'y':
-			# 役に立つと言われた｡
-			articles[fMaxArticleName]['reward'] += 5
-			# pprint(articles)
-			break
 
-		# 役に立たないと言われた
-		articles[fMaxArticleName]['reward'] -= 10
-		if articles[fMaxArticleName]['reward'] < 0:
-			articles[fMaxArticleName]['reward'] = 0.1
+# user_id, lang, searchWords
+def initCondidateList(userID, lang, searchValue):
+	client = pymongo.MongoClient("localhost", 27017)
+	db = client.oborobot
+	articles = {}
+	index = 0
+	for obj in db.word.find({'$or': [{'section_name': "description"} , {"section_name": "title"}], "lang":"ja", '$or': [{"type": "ProperNoun"} , {"type": "Noun"}]}):
+		# print(obj)
+		articles[en(obj['href'])] = {
+			'pos': [randNum(), randNum()],
+			'words': [],
+			'reward': 1,
+			'f': 0.0,
+			'url': obj['href']
+		}
+		index += 1
 
-		# pprint(articles)
+	for obj in db.word.find({'$or': [{'section_name': "description"} , {"section_name": "title"}], "lang":"ja", '$or': [{"type": "ProperNoun"}, {"type": "Noun"}, {"type": "Adjective"}]}):
+		articles[en(obj['href'])]['words'].append(obj['value'].lower())
+		articles[en(obj['href'])]['words'] = list(set(articles[en(obj['href'])]['words']))
+		articles[en(obj['href'])]['reward'] = len(articles[en(obj['href'])]['words'])
 
-		maxF = 0
-		start = time.time()
-		print('前の単語にはどの単語が関係ありそう?', selectWordsQuestion)
-		selectWordNum = int(input())
-		if selectWordNum >= 1 and selectWordNum <= len(selectWordMap) :
-			# selectArticleName = selectWordMap[selectWordNum-1]['articleName']
-			# selectArticles.append(selectArticleName)
-			# articles[selectArticleName]['reward'] += 5
-			# print("select", selectArticles)
+	request = {
+		'pos': [0.0, 0.0],
+		'reward': 1,
+	}
 
-			selectArticleURList = selectWordMap[selectWordNum-1]['urlList']
-			# print(selectArticleURList)
-			groupArticles = []
-			sumMX = 0.0
-			sumMY = 0.0
-			sumReward = 0.0 # m
-			for url in selectArticleURList:
-				articles[url]['reward'] += 5
-				sumReward += articles[url]['reward']
-				sumMX += articles[url]['reward'] * articles[url]['pos'][0] # m * xn
-				sumMY += articles[url]['reward'] * articles[url]['pos'][1]
-				groupArticles.append(articles[url])
+	searchWords = searchValue.split()
+	selectArticleURList = []
+	for articleName in articles:
+		article = articles[articleName]
+		words = article['words']
+		for searchWord in searchWords:
+			if searchWord in words:
+				selectArticleURList.append(articleName)
 
-			# 複数点の重心
-			xg = sumMX / sumReward
-			yg = sumMY / sumReward
+	sumMX = 0.0
+	sumMY = 0.0
+	sumReward = 0.0 # m
+	for url in selectArticleURList:
+		# print(url)
+		sumReward += articles[url]['reward']
+		sumMX += articles[url]['reward'] * articles[url]['pos'][0] # m * xn
+		sumMY += articles[url]['reward'] * articles[url]['pos'][1]
 
-			for url in selectArticleURList:
-				# ここでは､重心と現在の座標の中点
-				articles[url]['pos'][0] = (articles[url]['pos'][0] + xg) / 2
-				articles[url]['pos'][1] = (articles[url]['pos'][1] + yg) / 2
+	# 複数点の重心
+	if sumReward != 0:
+		xg = sumMX / sumReward
+		yg = sumMY / sumReward
+	else:
+		xg = 0
+		yg = 0
 
-			selectArticles.append(groupArticles)
-			if len(selectArticles) > 1:
-				compareArticles = selectArticles[len(selectArticles) - 2]
-				print(compareArticles)
-				print(selectArticles[len(selectArticles) - 1])
+	request['pos'][0] = xg
+	request['pos'][1] = yg
 
-				sumMXCompare = 0.0
-				sumMYCompare = 0.0
-				sumRewardCompare = 0.0 # m
+	r = main_loop(db, articles, request)
 
-				for compareArticle in compareArticles:
-					sumRewardCompare += compareArticle['reward']
-					sumMXCompare += compareArticle['reward'] * compareArticle['pos'][0] # m * xn
-					sumMYCompare += compareArticle['reward'] * compareArticle['pos'][1]
+	db.articles.insert_one(
+		{'user_id': userID, 'lang': lang, 'articles': r['articles'], 'choice': r['choice'], 'recommendation': r['recommendation'], 'request': request, 'selectArticles': []}
+	)
+	# print(result)
 
-				# 複数点の重心
-				xgCompare = sumMXCompare / sumRewardCompare
-				ygCompare = sumMYCompare / sumRewardCompare
+	return {'choice': r['choice'], 'recommendation': r['recommendation']}
 
-				# 2物体の重心 (m1x1 + m2x2) / m1 + m2
-				twoCenterXg = ((sumReward * xg) + (sumRewardCompare * xgCompare)) / (sumReward + sumRewardCompare)
-				twoCenterYg = ((sumReward * yg) + (sumRewardCompare * ygCompare)) / (sumReward + sumRewardCompare)
+# user_id, lang, choice_id
+def selectChoice(userID, choiceID, lang):
+	client = pymongo.MongoClient("localhost", 27017)
+	db = client.oborobot
+	articlesCollection = db.articles.find_one({"user_id": userID})
+	if articlesCollection == None:
+		response.status = 500
+		return {"message": 'user_id not found'}
 
-				print(twoCenterXg, twoCenterYg)
+	articles = articlesCollection['articles']
+	pprint(articles)
+	selectWordMap = articlesCollection['choice']
+	request = articlesCollection['request']
+	# print(choiceID, 777)
+	if choiceID < 0 or choiceID >= len(selectWordMap):
+		response.status = 500
+		return {"message": 'choiceID is invalid.'}
 
-				print(111, selectArticles)
-				for groupArticles in selectArticles:
-					for articleDict in groupArticles:
-						# print(articleDict)
-					# ここでは､重心と現在の座標の中点
-						articleDict['pos'][0] = (articleDict['pos'][0] + twoCenterXg) / 2
-						articleDict['pos'][1] = (articleDict['pos'][1] + twoCenterYg) / 2
+	selectArticleURList = selectWordMap[choiceID]['urlList']
+	# print(selectArticleURList)
 
-				print(222, selectArticles)
+	selectArticles = articlesCollection['selectArticles']
+	groupArticles = []
+	sumMX = 0.0
+	sumMY = 0.0
+	sumReward = 0.0 # m
+	for url in selectArticleURList:
+		# articles[url]['reward'] += 5
+		sumReward += articles[url]['reward']
+		sumMX += articles[url]['reward'] * articles[url]['pos'][0] # m * xn
+		sumMY += articles[url]['reward'] * articles[url]['pos'][1]
+		groupArticles.append(articles[url])
 
-				# articleAPos = articles[selectArticles[len(selectArticles) - 2]]['pos']
-				# articleBPos = articles[selectArticles[len(selectArticles) - 1]]['pos']
-				# articleCenterX = (articleAPos[0] + articleBPos[0]) / 2
-				# articleCenterY = (articleAPos[1] + articleBPos[1]) / 2
-				# # articleCenterPos = [articleCenterX, articleCenterY]
-				# articleAPos[0] = (articleAPos[0] + articleCenterX) / 2
-				# articleAPos[1] = (articleAPos[1] + articleCenterY) / 2
+	# 複数点の重心
+	xg = sumMX / sumReward
+	yg = sumMY / sumReward
 
-				# articleBPos[0] = (articleBPos[0] + articleCenterX) / 2
-				# articleBPos[1] = (articleBPos[1] + articleCenterY) / 2
-			# pprint(articles)
+	request['pos'][0] = (request['pos'][0] + xg) / 2
+	request['pos'][1] = (request['pos'][1] + yg) / 2
 
-		else:
-			pass
-			# 選択肢の候補単語リストの中に､良い記事出典がなかった
-			# for obj in selectWordMap:
-			# 	# print(selectWordNum)
-			# 	articles[obj[selectWordNum]-1]]['reward'] -= 10
-			# 	if articles[obj[selectWordNum]-1]]['reward'] < 0:
-			# 		articles[obj[selectWordNum]-1]]['reward'] = 0.1
-			# pprint(articles)
-			# evaluate(articles, original_articles, rewards)
-		# print(time.time() - start, "sec")
+	for url in selectArticleURList:
+		# ここでは､重心と現在の座標の中点
+		articles[url]['pos'][0] = (articles[url]['pos'][0] + xg) / 2
+		articles[url]['pos'][1] = (articles[url]['pos'][1] + yg) / 2
+
+	selectArticles.append(groupArticles)
+	if len(selectArticles) > 1:
+		compareArticles = selectArticles[len(selectArticles) - 2]
+		# print(compareArticles)
+		# print(selectArticles[len(selectArticles) - 1])
+
+		sumMXCompare = 0.0
+		sumMYCompare = 0.0
+		sumRewardCompare = 0.0 # m
+
+		for compareArticle in compareArticles:
+			sumRewardCompare += compareArticle['reward']
+			sumMXCompare += compareArticle['reward'] * compareArticle['pos'][0] # m * xn
+			sumMYCompare += compareArticle['reward'] * compareArticle['pos'][1]
+
+		# 複数点の重心
+		xgCompare = sumMXCompare / sumRewardCompare
+		ygCompare = sumMYCompare / sumRewardCompare
+
+		# 2物体の重心 (m1x1 + m2x2) / m1 + m2
+		twoCenterXg = ((sumReward * xg) + (sumRewardCompare * xgCompare)) / (sumReward + sumRewardCompare)
+		twoCenterYg = ((sumReward * yg) + (sumRewardCompare * ygCompare)) / (sumReward + sumRewardCompare)
+
+		# print(twoCenterXg, twoCenterYg)
+
+		# print(111, selectArticles)
+		for groupArticles in selectArticles:
+			for articleDict in groupArticles:
+				# print(articleDict)
+			# ここでは､重心と現在の座標の中点
+				articleDict['pos'][0] = (articleDict['pos'][0] + twoCenterXg) / 2
+				articleDict['pos'][1] = (articleDict['pos'][1] + twoCenterYg) / 2
+
+	r = main_loop(db, articles, request)
+	deleteColection = db.get_collection('articles')
+	result = deleteColection.delete_many({'user_id':userID})
+	result=db.articles.insert_one(
+		{'user_id': userID, 'lang': lang, 'articles': r['articles'], 'choice': r['choice'], 'recommendation': r['recommendation'], 'request': request, 'selectArticles': selectArticles}
+	)
+
+	plt.cla()
+	plt.figure(figsize=(10, 5))
+	plt.plot(request['pos'][0], request['pos'][1], marker='v', markersize=30)
+	plt.annotate('現在地', xy=(request['pos'][0], request['pos'][1]))
+
+	for articleURL in r['articles']:
+		article = r['articles'][articleURL]
+		plt.plot(article['pos'][0], article['pos'][1], marker='o', markersize=30)
+		plt.annotate(article['words'], xy=(article['pos'][0], article['pos'][1]))
+
+
+	plt.savefig('img/' + str(time.time()) + '_figure.png')
+	# plt.pause(.01)
+	# plt.close()
+
+
+	return {'choice': r['choice'], 'recommendation': r['recommendation']}
+
+@post('/start')
+def do_start():
+	requestBody = request.json
+	# user_id, lang, searchWords
+	userID = requestBody['userID']
+	lang = requestBody['lang']
+	searchValue = requestBody['searchValue']
+	r = initCondidateList(userID, lang, searchValue)
+	print(userID, lang, searchValue)
+	return r
+
+# user_id, lang, choice_id
+@post('/select')
+def do_select():
+	requestBody = request.json
+	userID = requestBody['userID']
+	lang = requestBody['lang']
+	choiceID = requestBody['choiceID']
+	r = selectChoice(userID, choiceID, lang)
+	return r
+
+run(host='localhost', port=8080, reloader=True)
