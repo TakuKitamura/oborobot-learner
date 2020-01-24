@@ -7,7 +7,7 @@ import pymongo
 import matplotlib.pyplot as plt
 import numpy as np
 import japanize_matplotlib
-from bottle import run, template, post, request, response
+from bottle import run, template, post, request, response, hook, route
 import urllib.parse
 import time
 
@@ -41,25 +41,14 @@ def main_loop(db, articles, request):
 			maxF = f
 		article['f'] = f
 	sortedArticleNamesByReward =  sorted(articles, key=lambda x: (articles[x]['f']), reverse=True)
-	pprint(sortedArticleNamesByReward)
+	# pprint(sortedArticleNamesByReward)
 
 	recommendations = []
-	for encoded_url in sortedArticleNamesByReward:
-		url = de(encoded_url)
-		print(url, 555)
-		for obj in db.favorite.find({"href": url}):
-			recommendations.append({'title': obj['title'], 'description': obj['description'], 'url': url})
-
-	pprint(recommendations)
-	# exit(0)
-
 	wordCount = 0
 	tempSelectWordMap = {}
-
-	for articleName in articles:
-		# plt.plot(article['pos'][0]d, article['pos'][1], marker='o', markersize=30)
-		# plt.annotate(article['wors'], xy=(article['pos'][0], article['pos'][1]))
-		article = articles[articleName]
+	for encoded_url in sortedArticleNamesByReward:
+		article = articles[encoded_url]
+		# print(article)
 		for i in range(0, len(article['words'])):
 			word = article['words'][i]
 			if word not in tempSelectWordMap.keys():
@@ -67,11 +56,33 @@ def main_loop(db, articles, request):
 			else:
 				tempSelectWordMap[word].append(articleName)
 			wordCount += 1
+
+		url = de(encoded_url)
+		# print(url, 555)
+		for obj in db.favorite.find({"href": url}):
+			recommendations.append({'title': obj['title'], 'description': obj['description'], 'url': url})
+
+	# pprint(recommendations)
+	# exit(0)
+
+
+
+	# for articleName in articles:
+	# 	# plt.plot(article['pos'][0]d, article['pos'][1], marker='o', markersize=30)
+	# 	# plt.annotate(article['wors'], xy=(article['pos'][0], article['pos'][1]))
+	# 	article = articles[articleName]
+	# 	for i in range(0, len(article['words'])):
+	# 		word = article['words'][i]
+	# 		if word not in tempSelectWordMap.keys():
+	# 			tempSelectWordMap[word] = [articleName]
+	# 		else:
+	# 			tempSelectWordMap[word].append(articleName)
+	# 		wordCount += 1
 	# plt.pause(.01)
 	selectWordMap = []
 	i = 0
-	for articleName in tempSelectWordMap:
-		selectWordMap.append({'id': i, 'articleName': articleName, 'urlList': tempSelectWordMap[articleName]})
+	for name in tempSelectWordMap:
+		selectWordMap.append({'id': i, 'name': name, 'urlList': tempSelectWordMap[name]})
 		i+=1
 
 	r = {'articles': articles, 'choice': selectWordMap, 'recommendation': recommendations, 'request': request}
@@ -82,28 +93,42 @@ def main_loop(db, articles, request):
 def initCondidateList(userID, lang, searchValue):
 	client = pymongo.MongoClient("localhost", 27017)
 	db = client.oborobot
+
+
+	init = False
+
+	articlesCollection = db.articles.find_one({})
+	if articlesCollection == None:
+		init = True
+
 	articles = {}
 	index = 0
-	for obj in db.word.find({'$or': [{'section_name': "description"} , {"section_name": "title"}], "lang":"ja", '$or': [{"type": "ProperNoun"} , {"type": "Noun"}]}):
-		# print(obj)
-		articles[en(obj['href'])] = {
-			'pos': [randNum(), randNum()],
-			'words': [],
+	request = {}
+	if init:
+		for obj in db.word.find({'$or': [{'section_name': "description"} , {"section_name": "title"}], "lang":"ja", '$or': [{"type": "ProperNoun"} , {"type": "Noun"}]}):
+			# print(obj)
+			articles[en(obj['href'])] = {
+				'pos': [randNum(), randNum()],
+				'words': [],
+				'reward': 1,
+				'f': 0.0,
+				'url': obj['href']
+			}
+			index += 1
+
+		for obj in db.word.find({'$or': [{'section_name': "description"} , {"section_name": "title"}], "lang":"ja", '$or': [{"type": "ProperNoun"}, {"type": "Noun"}, {"type": "Adjective"}]}):
+			articles[en(obj['href'])]['words'].append(obj['value'].lower())
+			articles[en(obj['href'])]['words'] = list(set(articles[en(obj['href'])]['words']))
+			articles[en(obj['href'])]['reward'] = len(articles[en(obj['href'])]['words'])
+
+		request = {
+			'pos': [0.0, 0.0],
 			'reward': 1,
-			'f': 0.0,
-			'url': obj['href']
 		}
-		index += 1
-
-	for obj in db.word.find({'$or': [{'section_name': "description"} , {"section_name": "title"}], "lang":"ja", '$or': [{"type": "ProperNoun"}, {"type": "Noun"}, {"type": "Adjective"}]}):
-		articles[en(obj['href'])]['words'].append(obj['value'].lower())
-		articles[en(obj['href'])]['words'] = list(set(articles[en(obj['href'])]['words']))
-		articles[en(obj['href'])]['reward'] = len(articles[en(obj['href'])]['words'])
-
-	request = {
-		'pos': [0.0, 0.0],
-		'reward': 1,
-	}
+	else:
+		articlesCollection = db.articles.find_one({})
+		articles = articlesCollection['articles']
+		request = articlesCollection['request']
 
 	searchWords = searchValue.split()
 	selectArticleURList = []
@@ -136,24 +161,41 @@ def initCondidateList(userID, lang, searchValue):
 
 	r = main_loop(db, articles, request)
 
-	db.articles.insert_one(
-		{'user_id': userID, 'lang': lang, 'articles': r['articles'], 'choice': r['choice'], 'recommendation': r['recommendation'], 'request': request, 'selectArticles': []}
-	)
+	if init:
+		db.articles.insert_one(
+			{'user_id': userID, 'lang': lang, 'articles': r['articles'], 'choice': r['choice'], 'recommendation': r['recommendation'], 'request': request, 'selectArticles': {userID: {'groupArticles': [], 'choice_name': ''}}}
+		)
+	else:
+		deleteColection = db.get_collection('articles')
+		result = deleteColection.delete_many({})
+		selectArticles = articlesCollection['selectArticles']
+		selectArticles[userID] = {}
+		selectArticles[userID]['groupArticles'] = []
+		selectArticles[userID]['choice_name'] = ''
+		db.articles.insert_one(
+			{'user_id': userID, 'lang': lang, 'articles': r['articles'], 'choice': r['choice'], 'recommendation': r['recommendation'], 'request': request, 'selectArticles': selectArticles}
+		)
 	# print(result)
 
-	return {'choice': r['choice'], 'recommendation': r['recommendation']}
+	choice = []
+	for choiceDict in r['choice']:
+		# print(choiceDict)
+		choiceDict.pop('urlList')
+		choice.append(choiceDict)
+
+	return {'choice': choice, 'recommendation': r['recommendation']}
 
 # user_id, lang, choice_id
 def selectChoice(userID, choiceID, lang):
 	client = pymongo.MongoClient("localhost", 27017)
 	db = client.oborobot
-	articlesCollection = db.articles.find_one({"user_id": userID})
+	articlesCollection = db.articles.find_one()
 	if articlesCollection == None:
 		response.status = 500
 		return {"message": 'user_id not found'}
 
 	articles = articlesCollection['articles']
-	pprint(articles)
+	# pprint(articles)
 	selectWordMap = articlesCollection['choice']
 	request = articlesCollection['request']
 	# print(choiceID, 777)
@@ -188,9 +230,13 @@ def selectChoice(userID, choiceID, lang):
 		articles[url]['pos'][0] = (articles[url]['pos'][0] + xg) / 2
 		articles[url]['pos'][1] = (articles[url]['pos'][1] + yg) / 2
 
-	selectArticles.append(groupArticles)
-	if len(selectArticles) > 1:
-		compareArticles = selectArticles[len(selectArticles) - 2]
+	if userID not in selectArticles:
+		response.status = 500
+		return {"message": 'userID is invalid.'}
+	selectArticles[userID]['groupArticles'].append(groupArticles)
+	selectArticles[userID]['choice_name'] = selectWordMap[choiceID]['name']
+	if len(selectArticles[userID]) > 1:
+		compareArticles = selectArticles[userID]['groupArticles'][len(selectArticles[userID]['groupArticles']) - 2]
 		# print(compareArticles)
 		# print(selectArticles[len(selectArticles) - 1])
 
@@ -214,7 +260,7 @@ def selectChoice(userID, choiceID, lang):
 		# print(twoCenterXg, twoCenterYg)
 
 		# print(111, selectArticles)
-		for groupArticles in selectArticles:
+		for groupArticles in selectArticles[userID]['groupArticles']:
 			for articleDict in groupArticles:
 				# print(articleDict)
 			# ここでは､重心と現在の座標の中点
@@ -223,7 +269,7 @@ def selectChoice(userID, choiceID, lang):
 
 	r = main_loop(db, articles, request)
 	deleteColection = db.get_collection('articles')
-	result = deleteColection.delete_many({'user_id':userID})
+	result = deleteColection.delete_many({})
 	result=db.articles.insert_one(
 		{'user_id': userID, 'lang': lang, 'articles': r['articles'], 'choice': r['choice'], 'recommendation': r['recommendation'], 'request': request, 'selectArticles': selectArticles}
 	)
@@ -243,8 +289,27 @@ def selectChoice(userID, choiceID, lang):
 	# plt.pause(.01)
 	# plt.close()
 
+	choice = []
+	for choiceDict in r['choice']:
+		# print(choiceDict)
+		choiceDict.pop('urlList')
+		choice.append(choiceDict)
 
-	return {'choice': r['choice'], 'recommendation': r['recommendation']}
+	return {'choice': choice, 'recommendation': r['recommendation']}
+
+@hook('after_request')
+def enable_cors():
+
+    if not 'Origin' in request.headers.keys():
+        return
+
+    response.headers['Access-Control-Allow-Origin']  = request.headers['Origin']
+    response.headers['Access-Control-Allow-Methods'] = 'PUT, GET, POST, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Origin, Accept, Content-Type, X-Requested-With, X-CSRF-Token, Authorization'
+
+@route('<any:path>', method='OPTIONS')
+def response_for_options(**kwargs):
+    return {}
 
 @post('/start')
 def do_start():
