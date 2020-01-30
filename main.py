@@ -35,8 +35,9 @@ def main_loop(db, articles, request):
 			r += 1
 		m1 = article['reward']
 		# m2 = request['reward']
-		# f = G * ((m1 * m2)/(r**2))
-		f = m1 / (r**2)
+		G = 6.67408 * 0.000000000001
+		f = G * ((m1 * 1)/(r**2))
+		# f = m1 / (r**2)
 		if f > maxF:
 			maxF = f
 		article['f'] = f
@@ -51,10 +52,11 @@ def main_loop(db, articles, request):
 		# print(article)
 		for i in range(0, len(article['words'])):
 			word = article['words'][i]
+			# print(articleName, 111)
 			if word not in tempSelectWordMap.keys():
-				tempSelectWordMap[word] = [articleName]
+				tempSelectWordMap[word] = [encoded_url]
 			else:
-				tempSelectWordMap[word].append(articleName)
+				tempSelectWordMap[word].append(encoded_url)
 			wordCount += 1
 
 		url = de(encoded_url)
@@ -84,8 +86,8 @@ def main_loop(db, articles, request):
 	for name in tempSelectWordMap:
 		selectWordMap.append({'id': i, 'name': name, 'urlList': tempSelectWordMap[name]})
 		i+=1
-
 	r = {'articles': articles, 'choice': selectWordMap, 'recommendation': recommendations, 'request': request}
+	print(r)
 	return r
 
 
@@ -190,6 +192,7 @@ def selectChoice(userID, choiceID, lang):
 	client = pymongo.MongoClient("localhost", 27017)
 	db = client.oborobot
 	articlesCollection = db.articles.find_one()
+	# print(articlesCollection)
 	if articlesCollection == None:
 		response.status = 500
 		return {"message": 'user_id not found'}
@@ -204,6 +207,7 @@ def selectChoice(userID, choiceID, lang):
 		return {"message": 'choiceID is invalid.'}
 
 	selectArticleURList = selectWordMap[choiceID]['urlList']
+	# print(selectWordMap, choiceID)
 	# print(selectArticleURList)
 
 	selectArticles = articlesCollection['selectArticles']
@@ -295,6 +299,7 @@ def selectChoice(userID, choiceID, lang):
 		choiceDict.pop('urlList')
 		choice.append(choiceDict)
 
+	# print(choice)
 	return {'choice': choice, 'recommendation': r['recommendation']}
 
 @hook('after_request')
@@ -319,7 +324,7 @@ def do_start():
 	lang = requestBody['lang']
 	searchValue = requestBody['searchValue']
 	r = initCondidateList(userID, lang, searchValue)
-	print(userID, lang, searchValue)
+	# print(userID, lang, searchValue)
 	return r
 
 # user_id, lang, choice_id
